@@ -307,7 +307,7 @@ EOF
 chmod 400 mykey.pem
 
 # From inside bastion
-ssh ec2-user@<private-instance-private-ip>
+ssh -i mykey.pem ec2-user@<private-instance-private-ip>
 ```
 
 > 💡 **Tip:** Use **AWS Systems Manager Session Manager** as a more secure, keyless alternative to Bastion Hosts — no open port 22 required.
