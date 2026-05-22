@@ -299,6 +299,13 @@ EC2 → Launch Instance
 ssh-add ~/.ssh/my-key.pem
 ssh -A -i ~/.ssh/my-key.pem ec2-user@<bastion-public-ip>
 
+
+cat > mykey.pem << 'EOF'
+key----
+-------
+EOF
+chmod 400 mykey.pem
+
 # From inside bastion
 ssh ec2-user@<private-instance-private-ip>
 ```
