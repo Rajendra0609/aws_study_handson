@@ -1,8 +1,9 @@
-# ☁️ AWS Console Hands-On Master Guide — DevOps L3 Engineer Reference
+# ☁️ AWS DevOps L3 Engineer — Complete Reference Guide
 
-> **Audience:** L3 DevOps Engineers | **Approach:** Console-first, CLI-paired, production-grade  
+> **Audience:** L3 DevOps Engineers | **Approach:** Console-first + CLI-paired, production-grade  
 > **Topics:** IAM · EC2 & Storage · S3 · VPC · Route 53 · Containers (ECR · ECS · EKS)  
-> **Region default:** `ap-south-1` (Mumbai) — swap to your nearest region throughout
+> **Region default:** `ap-south-1` (Mumbai) — swap to your nearest region throughout  
+> **Philosophy:** Learn via Console → Automate via CLI → Codify via Terraform
 
 ---
 
@@ -10,13 +11,17 @@
 
 | # | Domain | Key Topics |
 |---|--------|-----------|
-| 1 | [IAM — Identity & Access Management](#1--iam--identity--access-management) | Users, Groups, Policies, Roles, MFA, CLI |
-| 2 | [EC2 & Storage](#2--ec2--storage) | Instance types, User Data, EBS, EFS, Snapshots, AMI, Spot, Cost |
+| 1 | [IAM — Identity & Access Management](#1--iam--identity--access-management) | Users, Groups, Policies, Roles, MFA, CLI Setup |
+| 2 | [EC2 & Storage](#2--ec2--storage) | Instance types, User Data, EBS, EFS, Snapshots, AMI, Spot, IMDSv2, Cost |
 | 3 | [S3 — Object Storage](#3--s3--object-storage) | Buckets, Policies, Versioning, Lifecycle, Encryption, Access Points |
 | 4 | [VPC — Networking](#4--vpc--networking) | Subnets, IGW, NAT, Security Groups, NACLs, Peering, TGW, Endpoints |
 | 5 | [Route 53 — DNS](#5--route-53--dns) | Records, Routing Policies, Health Checks, Hybrid DNS |
 | 6 | [Containers — ECR · ECS · EKS](#6--containers--ecr--ecs--eks) | Image registry, Fargate, Kubernetes, GitOps, Security |
-| 7 | [Cross-Domain Self-Practice Questions](#7--cross-domain-self-practice-questions) | 80+ scenario-based challenges |
+| 7 | [Cross-Domain Self-Practice Questions](#7--cross-domain-self-practice-questions) | 60+ scenario-based challenges |
+| 8 | [Console Navigation Quick Reference](#8--console-navigation-quick-reference) | All console paths in one table |
+| 9 | [Critical CLI Commands Quick Reference](#9--critical-cli-commands-quick-reference) | All essential CLI commands |
+| 10 | [Common Mistakes & Fixes](#10--common-mistakes--fixes-l3-survival-guide) | L3 Survival Guide |
+| 11 | [10-Week Learning Path](#11--10-week-learning-path) | Structured study plan |
 
 ---
 
@@ -47,21 +52,39 @@ AWS Account
 | **Credentials Report** | Account-wide audit CSV | Run monthly; catch stale keys and missing MFA |
 | **Access Advisor** | Per-user service last-used data | Use to apply least-privilege — remove unused services |
 
+---
+
 ### Console: Create Admin User (Day 1 Task)
 
 ```
-IAM → User Groups → Create Group
-  Name: Admins
-  Policy: AdministratorAccess
+Step 1 — Create Group
+  IAM → User groups → Create group
+    Group name: Admins
+    Attach permissions policy → search: AdministratorAccess → check it
+  → Create user group
 
-IAM → Users → Create User
-  Username: admin-yourname
-  Enable Console Access → Custom Password
-  Add to group: Admins
-  Download .csv (has sign-in URL, credentials)
+Step 2 — Create User
+  IAM → Users → Create user
+    User name: admin-yourname
+    ✅ Provide user access to the AWS Management Console
+    Select: I want to create an IAM user
+    Console password: Custom password (set a strong one)
+    ✅ Users must create a new password at next sign-in
+  → Next → Add user to group: Admins → Next → Create user
+  → Download .csv (contains sign-in URL and credentials)
+
+Step 3 — Enable MFA on the new user
+  IAM → Users → admin-yourname → Security credentials
+  → Multi-factor authentication (MFA) → Assign MFA device
+    Device name: admin-mfa
+    MFA device: Authenticator app → Next
+    Scan the QR code with Google Authenticator / Authy
+    Enter two consecutive codes → Add MFA
 ```
 
 > **After this:** Sign in as the IAM user. Never use root for daily work again.
+
+---
 
 ### Policy Structure & Evaluation
 
@@ -88,8 +111,31 @@ IAM → Users → Create User
 
 **Evaluation logic:** Explicit DENY → wins. Explicit ALLOW → permitted. No statement → implicit DENY.
 
-### Custom Policy Hands-On
+---
 
+### Custom Policy — Console + CLI
+
+**Console (Step-by-Step):**
+```
+Step 1 — Create the policy
+  IAM → Policies → Create policy
+    Select: JSON tab → paste your policy JSON
+  → Next → Policy name: EC2-ReadOnly-NoTerminate → Create policy
+
+Step 2 — Attach to a Group
+  IAM → User groups → Developers → Permissions tab
+  → Add permissions → Attach policies
+    Search: EC2-ReadOnly-NoTerminate → check it
+  → Attach policies
+
+Step 3 — Test with Policy Simulator
+  IAM → Policy Simulator (top-right "Tools" menu or direct link)
+  → Select users/roles → select the user
+  → Select service: EC2 → select actions → Run Simulation
+  → Review Allow / Deny results
+```
+
+**CLI Equivalent:**
 ```bash
 # Create policy from file
 aws iam create-policy \
@@ -105,8 +151,30 @@ aws iam attach-group-policy \
 # IAM → Policy Simulator → select user → select service → Run Simulation
 ```
 
+---
+
 ### IAM Roles — The Right Way to Give Services Access
 
+**Console (Step-by-Step):**
+```
+Step 1 — Create the Role
+  IAM → Roles → Create role
+    Trusted entity type: AWS service
+    Use case: EC2 → Next
+    Search policy: AmazonS3ReadOnlyAccess → check it → Next
+    Role name: EC2-S3-ReadOnly-Role → Create role
+
+Step 2 — Attach Role to a Running EC2 Instance
+  EC2 → Instances → select instance
+  → Actions → Security → Modify IAM role
+  → Select IAM role: EC2-S3-ReadOnly-Role → Update IAM role
+
+Step 3 — Verify from inside EC2
+  Connect to the instance (EC2 Instance Connect or SSH)
+  Run: aws s3 ls     ← works without any credentials configured
+```
+
+**CLI Equivalent:**
 ```bash
 # Create role for EC2 to access S3
 aws iam create-role \
@@ -132,6 +200,8 @@ aws ec2 associate-iam-instance-profile \
 
 From inside the EC2: `aws s3 ls` — works without any credentials configured.
 
+---
+
 ### CLI Setup & Multi-Profile
 
 ```bash
@@ -145,22 +215,47 @@ aws s3 ls --profile production
 # Verify who you are
 aws sts get-caller-identity
 
-# Quick commands
+# Quick user commands
 aws iam list-users
 aws iam list-attached-user-policies --user-name alice
 aws iam generate-credential-report
 aws iam get-credential-report --output text --query Content | base64 -d
 ```
 
+---
+
+### Access Key Management
+
+**Console:**
+```
+Create Access Key:
+  IAM → Users → select user → Security credentials
+  → Access keys → Create access key
+    Use case: CLI / Application running outside AWS
+  → Download .csv → store securely
+
+Deactivate / Delete Access Key:
+  IAM → Users → select user → Security credentials → Access keys
+  → Click: Make inactive (deactivate) or Delete
+
+View Credential Report (Account-wide audit):
+  IAM → Credential report → Download Report (CSV)
+  Review for: stale keys, missing MFA, last used dates
+
+View Access Advisor (per-user):
+  IAM → Users → select user → Access Advisor tab
+  → Review service last-accessed dates → remove unused permissions
+```
+
 ### Access Key Rotation (Zero-Downtime Pattern)
 
 ```
-Step 1: Create Key 2 (now have Key 1 + Key 2)
+Step 1: Create Key 2  → IAM → Users → user → Security credentials → Create access key
 Step 2: Update all apps/scripts to use Key 2
 Step 3: Verify Key 2 works everywhere
-Step 4: Deactivate Key 1
+Step 4: Deactivate Key 1  → Actions: Make inactive
 Step 5: Wait 24–48 hours
-Step 6: Delete Key 1
+Step 6: Delete Key 1  → Actions: Delete
 ```
 
 ### IAM Security Checklist
@@ -190,15 +285,23 @@ Step 6: Delete Key 1
 
 > **L3 Rule:** Use Graviton (`t4g`, `m7g`, `c7g`) — 20% cheaper, often faster. Always valid unless GPU or Windows required.
 
+---
+
 ### Launch EC2 with User Data (Auto-Bootstrap)
 
+**Console:**
 ```
 EC2 → Launch Instance
-  AMI: Amazon Linux 2023
+  Name: my-web-server
+  AMI: Amazon Linux 2023 (Free tier eligible)
   Instance Type: t3.micro
-  Key Pair: create or select
-  Security Group: allow SSH (22) from your IP, HTTP (80) from 0.0.0.0/0
-  Advanced Details → User Data:
+  Key pair: Create new key pair → Name: my-key → RSA → .pem → Create
+  Network settings:
+    VPC: default (or your VPC)
+    Security group: Create new
+      Rule 1: SSH — Port 22 — Source: My IP
+      Rule 2: HTTP — Port 80 — Source: 0.0.0.0/0
+  Advanced details → User data (paste below):
 ```
 
 ```bash
@@ -209,11 +312,20 @@ systemctl start httpd && systemctl enable httpd
 echo "<h1>$(hostname -f) — $(date)</h1>" > /var/www/html/index.html
 ```
 
+```
+→ Launch instance
+→ Wait for Instance State: Running, then open Public IP in browser
+```
+
+> **Connect via browser (no key needed):**
+> EC2 → Instances → select instance → Connect → EC2 Instance Connect → Connect
+
+**Debug User Data & Instance Metadata (IMDSv2):**
 ```bash
 # Tail user data log from inside instance
 tail -f /var/log/cloud-init-output.log
 
-# Instance metadata (IMDSv2)
+# Instance metadata (IMDSv2 — secure method)
 TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" \
   -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
 curl -H "X-aws-ec2-metadata-token: $TOKEN" \
@@ -221,6 +333,8 @@ curl -H "X-aws-ec2-metadata-token: $TOKEN" \
 curl -H "X-aws-ec2-metadata-token: $TOKEN" \
   http://169.254.169.254/latest/meta-data/public-ipv4
 ```
+
+---
 
 ### Networking: IP Types
 
@@ -232,10 +346,15 @@ curl -H "X-aws-ec2-metadata-token: $TOKEN" \
 
 > **L3 Tip:** Avoid Elastic IPs. Use DNS (Route 53) or a Load Balancer instead. Elastic IPs are charged when idle and clutter your account.
 
+---
+
 ### SSH & EC2 Instance Connect
 
 ```bash
-# Linux/Mac
+# Browser-based (no key needed):
+# EC2 → Instances → select instance → Connect → EC2 Instance Connect → Connect
+
+# Key-based SSH (Linux/Mac terminal)
 chmod 400 my-key.pem
 ssh -i my-key.pem ec2-user@<PUBLIC-IP>
 
@@ -243,10 +362,9 @@ ssh -i my-key.pem ec2-user@<PUBLIC-IP>
 ssh -i my-key.pem \
   -o "ProxyJump ec2-user@<BASTION-IP>" \
   ec2-user@<PRIVATE-IP>
-
-# No key needed — browser-based (port 22 must be open)
-# EC2 Console → Connect → EC2 Instance Connect
 ```
+
+---
 
 ### EBS Volume Types
 
@@ -260,29 +378,84 @@ ssh -i my-key.pem \
 
 > **L3 Rule:** Always use `gp3` over `gp2` — same IOPS, more throughput, ~20% cheaper.
 
+---
+
 ### Attach & Mount an EBS Volume
 
+**Console (Step-by-Step):**
+```
+Step 1 — Create Volume in same AZ as instance
+  EC2 → Elastic Block Store → Volumes → Create volume
+    Volume type: gp3
+    Size: 20 GiB
+    Availability Zone: ap-south-1a  ← must match instance AZ
+  → Create volume
+
+Step 2 — Attach to Instance
+  Select the new volume → Actions → Attach volume
+  → Instance: select your instance
+  → Device name: /dev/sdf  → Attach volume
+
+Step 3 — Mount inside the instance (via EC2 Instance Connect terminal)
+  lsblk                          # confirm device (e.g. xvdf)
+  sudo mkfs -t ext4 /dev/xvdf    # format (only first time!)
+  sudo mkdir /data
+  sudo mount /dev/xvdf /data     # mount
+  df -h                          # confirm
+
+Step 4 — Persist across reboots
+  echo "/dev/xvdf /data ext4 defaults,nofail 0 2" | sudo tee -a /etc/fstab
+```
+
+**CLI + Terminal:**
 ```bash
 # Console: EC2 → Volumes → Create Volume (same AZ as instance) → Attach
-
-# Inside the instance:
+# Then inside the instance:
 lsblk                          # List block devices
 sudo mkfs -t ext4 /dev/xvdf    # Format (only first time!)
 sudo mkdir /data
 sudo mount /dev/xvdf /data     # Mount
 df -h                          # Confirm
 
-# Persist mount across reboots (add to /etc/fstab)
+# Persist mount across reboots
 echo "/dev/xvdf /data ext4 defaults,nofail 0 2" | sudo tee -a /etc/fstab
 ```
 
-### EBS Snapshots — Cross-AZ & Cross-Region Migration
+---
 
+### EBS Snapshots — Console & CLI (Cross-AZ & Cross-Region Migration)
+
+**Console:**
+```
+Create Snapshot:
+  EC2 → Elastic Block Store → Volumes → select volume
+  → Actions → Create snapshot
+    Description: Before deployment → Create snapshot
+
+Copy Snapshot to Another Region:
+  EC2 → Elastic Block Store → Snapshots → select snapshot
+  → Actions → Copy snapshot
+    Destination Region: us-east-1 → Copy snapshot
+
+Create Volume from Snapshot in a Different AZ:
+  Snapshots → select snapshot → Actions → Create volume from snapshot
+    Availability Zone: ap-south-1b
+    Volume type: gp3 → Create volume
+
+Automate with Data Lifecycle Manager:
+  EC2 → Elastic Block Store → Lifecycle Manager → Create lifecycle policy
+    Policy type: EBS snapshot policy
+    Target: Instances or Volumes with specific tags
+    Schedule: Daily at 02:00 UTC → Retain: 7 snapshots
+  → Create policy
+```
+
+**CLI Equivalent:**
 ```bash
 # Create snapshot
 aws ec2 create-snapshot --volume-id vol-xxxx --description "Before deployment"
 
-# Copy snapshot to another region (enables cross-region migration)
+# Copy snapshot to another region
 aws ec2 copy-snapshot \
   --source-region ap-south-1 \
   --source-snapshot-id snap-xxxx \
@@ -298,23 +471,58 @@ aws ec2 create-volume \
 # EC2 → Lifecycle Manager → Create Policy → Snapshot schedule
 ```
 
+---
+
 ### AMI — Build a Custom Image
 
+**Console:**
 ```
-Console:
-EC2 → Select running instance → Actions → Image and Templates → Create Image
-  Image name: my-nginx-app-v1.0
-  No Reboot: ✅ (avoid downtime)
-→ Create Image
+Create AMI:
+  EC2 → Instances → select running instance
+  → Actions → Image and templates → Create image
+    Image name: my-nginx-app-v1.0
+    ✅ No reboot (avoid downtime)
+  → Create image  (takes 5–15 min, check EC2 → AMIs)
 
-Launch new instance from AMI:
-EC2 → Launch Instance → My AMIs → select your image
+Launch New Instance from your AMI:
+  EC2 → Launch instance → My AMIs (left sidebar)
+  → Select your AMI → configure and launch as normal
 ```
 
 > **L3 Use:** Bake-in agents, config, security hardening, app binaries → faster ASG scale-out, consistent environments.
 
-### EFS — Shared File System (Linux Only)
+---
 
+### EFS — Shared File System (Console + CLI)
+
+**Console (Step-by-Step):**
+```
+Step 1 — Create EFS File System
+  EFS → Create file system
+    Name: my-efs
+    VPC: select your VPC
+  → Customize (optional: set lifecycle policy)
+  → Create  (note the DNS name: fs-xxxx.efs.ap-south-1.amazonaws.com)
+
+Step 2 — Allow NFS access in Security Group
+  EC2 → Security Groups → your app SG
+  → Inbound rules → Edit inbound rules
+    Add rule: NFS (port 2049) — Source: your app SG (self-referencing)
+  → Save rules
+
+Step 3 — Mount on EC2 instances (EC2 Instance Connect terminal)
+  sudo yum install -y amazon-efs-utils
+  sudo mkdir /efs
+  sudo mount -t efs -o tls <EFS-DNS-NAME>:/ /efs
+
+Step 4 — Test shared access
+  # Instance 1: write
+  echo "Hello from Instance 1" | sudo tee /efs/shared.txt
+  # Instance 2: read (same content instantly)
+  cat /efs/shared.txt
+```
+
+**CLI + Terminal:**
 ```bash
 # Console: EFS → Create File System → VPC → Multi-AZ
 
@@ -330,14 +538,15 @@ echo "Hello from Instance 1" | sudo tee /efs/shared.txt
 cat /efs/shared.txt
 ```
 
-**EBS vs EFS decision:**
-
+**EBS vs EFS Decision:**
 ```
 Need shared access across instances?   → EFS (ReadWriteMany)
 Single instance, max IOPS, persistent? → io2 EBS
 Temporary scratch / cache?             → Instance Store (lost on stop)
 Default general-purpose?               → gp3 EBS
 ```
+
+---
 
 ### EC2 Purchasing Options
 
@@ -349,10 +558,29 @@ Default general-purpose?               → gp3 EBS
 | Spot | Up to 90% | Stateless, fault-tolerant, batch jobs |
 | Dedicated Host | — | BYOL licensing, compliance |
 
-### Spot Instance — Interruption Handler
+---
 
+### Spot Instance — Console + Interruption Handler
+
+**Console:**
+```
+EC2 → Spot Requests → Request Spot Instances
+  Request type: Request (one-time) or Persistent
+  Launch template: create or select
+  Target capacity: 2 instances
+  Instance types: c6i.large, c5.large, m5.large  ← multiple types = fewer interruptions
+  Allocation strategy: Price capacity optimized
+  Max price: leave blank (use on-demand price as cap)
+→ Launch
+
+Monitor interruptions:
+  EC2 → Instances → look for "Spot" type
+  Instance state → interruption notices appear 2 min before termination
+```
+
+**Interruption Handler (Terminal — run on each Spot instance):**
 ```bash
-# Poll instance metadata for 2-minute warning
+# Poll instance metadata for 2-minute termination warning
 TOKEN=$(curl -sX PUT "http://169.254.169.254/latest/api/token" \
   -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
 INTERRUPTION=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" \
@@ -360,8 +588,26 @@ INTERRUPTION=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" \
 [ -n "$INTERRUPTION" ] && echo "SPOT INTERRUPTION at $INTERRUPTION — begin graceful shutdown"
 ```
 
-### Cost Optimization Checklist
+---
 
+### Cost Optimization — Console + CLI
+
+**Console:**
+```
+Find Idle / Over-provisioned Instances (Compute Optimizer):
+  AWS Console → Compute Optimizer → EC2 instances
+  → Filter: Over-provisioned → review right-sizing recommendations
+
+Find Unattached EBS Volumes (cost leak):
+  EC2 → Elastic Block Store → Volumes
+  → Filter: State = available  ← these are billable orphans, delete them
+
+Find Unattached Elastic IPs:
+  EC2 → Network & Security → Elastic IPs
+  → Unassociated IPs show "–" in Instance column → Actions → Release
+```
+
+**CLI Equivalent:**
 ```bash
 # Find idle EC2 instances (Compute Optimizer)
 aws compute-optimizer get-ec2-instance-recommendations \
@@ -378,12 +624,13 @@ aws ec2 describe-addresses \
   --query 'Addresses[?AssociationId==null].[PublicIp,AllocationId]' --output table
 ```
 
+**Cost Optimization Checklist:**
 - [ ] Unattached EBS volumes deleted
 - [ ] Old snapshots on lifecycle policy (Data Lifecycle Manager)
 - [ ] Over-provisioned instances right-sized (Compute Optimizer)
 - [ ] Spot or Savings Plans purchased for steady workloads
 - [ ] EFS Lifecycle Management enabled (auto-move to IA after 30 days)
-- [ ] Budget alert configured
+- [ ] Budget alert configured (Billing → Budgets → Create budget)
 
 ---
 
@@ -396,21 +643,36 @@ aws ec2 describe-addresses \
 - **URL format:** `https://<bucket>.s3.<region>.amazonaws.com/<key>`
 - **Folders are simulated** via `/` in key names — S3 is flat
 
+---
+
 ### Create Bucket & Upload
 
+**Console:**
 ```
-S3 → Create Bucket
-  Name: my-app-assets-2024 (globally unique)
-  Region: ap-south-1
-  Block all public access: ✅ (keep on by default)
-→ Create Bucket → Upload files
+S3 → Create bucket
+  Bucket name: my-app-assets-2024  (globally unique)
+  AWS Region: ap-south-1
+  Block Public Access: ✅ Block all (keep on by default)
+→ Create bucket
+
+Upload files:
+  S3 → Buckets → my-app-assets-2024 → Upload
+  → Add files or Add folder → Upload
 ```
+
+---
 
 ### Bucket Policy — Public Read (for static sites)
 
+**Console:**
 ```
-S3 → Bucket → Permissions → Block Public Access → uncheck all → Save
-Permissions → Bucket Policy → Edit → paste:
+Step 1 — Disable Block Public Access
+  S3 → Buckets → your-bucket → Permissions tab
+  → Block public access → Edit → uncheck all → Save changes
+  Type "confirm" → Confirm
+
+Step 2 — Add Bucket Policy
+  Permissions tab → Bucket policy → Edit → paste:
 ```
 
 ```json
@@ -425,7 +687,15 @@ Permissions → Bucket Policy → Edit → paste:
 }
 ```
 
+```
+→ Save changes
+```
+
+---
+
 ### Enforce Encryption at Upload (Deny Unencrypted PUT)
+
+Add this statement to your bucket policy:
 
 ```json
 {
@@ -441,23 +711,50 @@ Permissions → Bucket Policy → Edit → paste:
 }
 ```
 
+---
+
 ### Static Website Hosting
 
+**Console:**
 ```
-S3 → Bucket → Properties → Static website hosting → Enable
+S3 → Buckets → your-bucket → Properties tab
+→ Static website hosting → Edit → Enable
   Index document: index.html
   Error document: error.html
-→ Save
+→ Save changes
 
-# HTTP only. For HTTPS, put CloudFront in front.
-# Website URL: http://<bucket>.s3-website-<region>.amazonaws.com
+Website URL:
+  Properties → Static website hosting → note the endpoint URL
+  Format: http://<bucket>.s3-website-<region>.amazonaws.com
+
+Note: HTTP only. For HTTPS, put CloudFront in front.
 ```
 
-### Versioning
+---
 
+### Versioning — Console + CLI
+
+**Console:**
+```
+Enable Versioning:
+  S3 → Buckets → your-bucket → Properties
+  → Bucket Versioning → Edit → Enable → Save changes
+
+List Versions:
+  S3 → Buckets → your-bucket → Objects tab
+  → Toggle "Show versions" (top right) — all versions appear with Version ID
+
+Delete Specific Version (permanent):
+  Show versions ON → select the specific version → Delete
+  → type "permanently delete" → Delete objects
+
+Restore (undelete) an object:
+  Show versions ON → find the "Delete marker" for your object
+  → select the delete marker → Delete (removes the marker, restores the object)
+```
+
+**CLI:**
 ```bash
-# Enable via console: Bucket → Properties → Bucket Versioning → Enable
-
 # List all versions
 aws s3api list-object-versions --bucket my-bucket
 
@@ -467,25 +764,33 @@ aws s3api delete-object --bucket my-bucket --key file.txt --version-id <version-
 # Restore: delete the Delete Marker to undelete an object
 ```
 
+---
+
 ### Lifecycle Rules — Auto-Tier & Expire
 
+**Console:**
 ```
-S3 → Bucket → Management → Lifecycle rules → Create lifecycle rule
-  Name: archive-old-logs
-  Apply to: prefix logs/
-  Actions:
-    Transition: after 30 days → Standard-IA
-    Transition: after 90 days → Glacier Flexible Retrieval
-    Expire: after 365 days
-    Delete incomplete multipart uploads: after 7 days ← always add this
+S3 → Buckets → your-bucket → Management tab
+→ Lifecycle rules → Create lifecycle rule
+  Rule name: archive-old-logs
+  Rule scope: Limit to specific prefix → logs/
+  Lifecycle rule actions:
+    ✅ Transition current versions between storage classes
+       After 30 days → Standard-IA
+       After 90 days → Glacier Flexible Retrieval
+    ✅ Expire current versions after 365 days
+    ✅ Delete incomplete multipart uploads after 7 days  ← always add this
+→ Create rule
 ```
 
+**CLI:**
 ```bash
-# Via CLI
 aws s3api put-bucket-lifecycle-configuration \
   --bucket my-bucket \
   --lifecycle-configuration file://lifecycle.json
 ```
+
+---
 
 ### S3 Storage Classes
 
@@ -499,12 +804,34 @@ aws s3api put-bucket-lifecycle-configuration \
 | Glacier Flexible | 1 min–12 hr | 90 days | Archives |
 | Glacier Deep Archive | 12–48 hr | 180 days | Long-term compliance |
 
-### Replication (CRR / SRR)
+---
 
+### Replication (CRR / SRR) — Console + CLI
+
+**Console:**
+```
+Prerequisites: Enable versioning on BOTH source and destination buckets first.
+
+Source Bucket → Management tab → Replication rules → Create replication rule
+  Rule name: mumbai-to-singapore
+  Status: Enabled
+  Source bucket scope: All objects (or prefix filter)
+  Destination: choose bucket in this or another account
+    → ap-southeast-1 bucket for CRR
+  IAM role: Create new role (auto-created)
+  Additional options:
+    ✅ Replicate delete markers (optional)
+→ Save
+
+Replicate existing objects (not auto-replicated when rule is first created):
+  S3 → Batch Operations → Create job
+    Manifest: S3 Inventory report or CSV
+    Operation: Replication → Run job
+```
+
+**CLI:**
 ```bash
 # Both source and destination must have versioning enabled
-# Console: Source Bucket → Management → Replication rules → Create
-
 # CLI: create IAM role, then:
 aws s3api put-bucket-replication \
   --bucket source-bucket \
@@ -514,7 +841,9 @@ aws s3api put-bucket-replication \
 # S3 → Batch Operations → Create job → Replication
 ```
 
-### Encryption
+---
+
+### Encryption — Console + CLI
 
 | Method | Key Owner | Notes |
 |--------|----------|-------|
@@ -523,32 +852,78 @@ aws s3api put-bucket-replication \
 | SSE-C | You entirely | Pass key with every request; AWS never stores it |
 | Client-Side | You | Encrypted before upload |
 
+**Console:**
+```
+Set Default Encryption:
+  S3 → Buckets → your-bucket → Properties
+  → Default encryption → Edit
+    Encryption type: SSE-KMS
+    AWS KMS key: choose key or use AWS managed key
+  → Save changes
+
+Upload with specific encryption (per object):
+  S3 → Upload → Properties (expand) → Server-side encryption
+    Select: SSE-KMS → choose your KMS key
+```
+
+**CLI:**
 ```bash
 # Upload with SSE-KMS
 aws s3 cp file.txt s3://my-bucket/ \
   --sse aws:kms \
   --sse-kms-key-id alias/my-key
 
-# Upload with SSE-C
+# Upload with SSE-C (you own and pass the key)
 aws s3 cp file.txt s3://my-bucket/ \
   --sse-c AES256 \
   --sse-c-key fileb://encryption-key.bin
 ```
 
-### Pre-Signed URLs (Temporary Access)
+---
 
+### Pre-Signed URLs — Console + CLI
+
+**Console (Download URL):**
+```
+S3 → Buckets → your-bucket → click on the object
+→ Object actions → Share with a presigned URL
+  Duration: 5 minutes (or custom)
+→ Create presigned URL → Copy the URL
+
+Note: For pre-signed PUT URLs (upload), you must use the AWS CLI or SDK.
+```
+
+**CLI:**
 ```bash
 # Download URL — valid 5 minutes
 aws s3 presign s3://my-bucket/private-file.pdf --expires-in 300
 
-# Upload URL — let users upload directly to S3
+# Upload URL — let users upload directly to S3 (no AWS credentials needed)
 aws s3 presign s3://my-bucket/target.txt \
   --expires-in 3600 \
   --http-method PUT
 ```
 
-### S3 Object Lock (WORM Compliance)
+---
 
+### S3 Object Lock (WORM Compliance) — Console + Notes
+
+**Console:**
+```
+Enable at bucket creation:
+  S3 → Create bucket → Advanced settings
+  → Object Lock: Enable → Acknowledge → Create bucket
+
+Apply retention to object:
+  S3 → object → Object actions → Edit object lock retention
+    Retention mode: Governance (admins can override) or Compliance (no one can delete)
+    Retain until date: set date → Save changes
+
+Legal Hold (independent lock):
+  Object → Object actions → Edit object lock legal hold: Enable
+```
+
+**Key Notes:**
 ```
 Enable at bucket creation → cannot be turned off after.
 
@@ -559,10 +934,27 @@ Legal Hold: independent lock — placed/removed by authorized users
 Use case: SEC 17a-4, HIPAA, PCI-DSS immutable records
 ```
 
-### VPC Endpoint for S3 (Free Private Access)
+---
 
+### VPC Endpoint for S3 (Free Private Access) — Console + CLI
+
+**Console:**
+```
+VPC → Endpoints → Create endpoint
+  Service category: AWS services
+  Service name: search "s3" → select com.amazonaws.ap-south-1.s3
+  Endpoint type: Gateway  ← FREE (not Interface)
+  VPC: select your VPC
+  Route tables: select private route tables (app, DB subnets)
+→ Create endpoint
+
+Now private EC2 instances can access S3 without going through NAT Gateway.
+Check: VPC → Route Tables → private RT → Routes → should see a new S3 prefix route.
+```
+
+**CLI:**
 ```bash
-# Create Gateway Endpoint (free!) — traffic never leaves AWS
+# Create Gateway Endpoint (FREE!) — traffic never leaves AWS
 aws ec2 create-vpc-endpoint \
   --vpc-id vpc-xxxx \
   --service-name com.amazonaws.ap-south-1.s3 \
@@ -572,6 +964,8 @@ aws ec2 create-vpc-endpoint \
 # Now private EC2 instances can aws s3 ls without NAT Gateway
 ```
 
+---
+
 ### S3 Best Practices Checklist
 
 - [ ] Versioning enabled on production buckets
@@ -579,9 +973,9 @@ aws ec2 create-vpc-endpoint \
 - [ ] Lifecycle rules to expire logs and old versions
 - [ ] Block Public Access at account level
 - [ ] Access logging enabled (to a separate bucket)
-- [ ] MFA Delete on critical buckets (CLI only, root only)
+- [ ] MFA Delete on critical buckets (requires CLI with root credentials — cannot be done via console)
 - [ ] Incomplete multipart upload cleanup rule (7 days)
-- [ ] S3 Storage Lens dashboard enabled for visibility
+- [ ] S3 Storage Lens dashboard enabled: S3 → Storage Lens → Create dashboard
 
 ---
 
@@ -603,7 +997,78 @@ AWS reserves 5 IPs per subnet: .0 .1 .2 .3 .255
 
 > **L3 Rule:** Plan CIDRs before you create anything — they cannot be changed. Use IPAM for multi-VPC environments.
 
-### Create VPC + Subnets + IGW + NAT (CLI)
+---
+
+### Create VPC + Subnets + IGW + NAT — Console (Step-by-Step)
+
+```
+━━━ Step 1: Create VPC ━━━
+VPC → Your VPCs → Create VPC
+  Resource to create: VPC only
+  Name tag: prod-vpc
+  IPv4 CIDR: 10.0.0.0/16
+→ Create VPC
+
+Enable DNS hostnames (required for many services):
+  VPC → Your VPCs → select prod-vpc → Actions → Edit VPC settings
+  ✅ Enable DNS hostnames → Save
+
+━━━ Step 2: Create Subnets ━━━
+VPC → Subnets → Create subnet
+  VPC: prod-vpc
+  Add subnet (repeat for each):
+    Name: pub-subnet-1a  |  AZ: ap-south-1a  |  CIDR: 10.0.1.0/24
+    Name: pub-subnet-1b  |  AZ: ap-south-1b  |  CIDR: 10.0.2.0/24
+    Name: app-subnet-1a  |  AZ: ap-south-1a  |  CIDR: 10.0.3.0/24
+    Name: app-subnet-1b  |  AZ: ap-south-1b  |  CIDR: 10.0.4.0/24
+    Name: db-subnet-1a   |  AZ: ap-south-1a  |  CIDR: 10.0.5.0/24
+    Name: db-subnet-1b   |  AZ: ap-south-1b  |  CIDR: 10.0.6.0/24
+→ Create subnet
+
+Enable auto-assign public IP on public subnets:
+  Subnets → select pub-subnet-1a → Actions → Edit subnet settings
+  ✅ Enable auto-assign public IPv4 address → Save
+  Repeat for pub-subnet-1b
+
+━━━ Step 3: Create Internet Gateway ━━━
+VPC → Internet gateways → Create internet gateway
+  Name tag: prod-igw → Create internet gateway
+→ Actions → Attach to VPC → select prod-vpc → Attach internet gateway
+
+━━━ Step 4: Create NAT Gateway (in public subnet) ━━━
+VPC → NAT gateways → Create NAT gateway
+  Name: prod-nat-gw
+  Subnet: pub-subnet-1a   ← MUST be a public subnet
+  Connectivity type: Public
+  Elastic IP: click "Allocate Elastic IP"
+→ Create NAT gateway  (takes ~2 minutes to become Available)
+
+━━━ Step 5: Create Route Tables ━━━
+A) Public Route Table:
+  VPC → Route tables → Create route table
+    Name: pub-rt  |  VPC: prod-vpc → Create
+
+  Add internet route:
+    pub-rt → Routes tab → Edit routes → Add route
+      Destination: 0.0.0.0/0  |  Target: Internet Gateway → prod-igw
+    → Save changes
+
+  Associate public subnets:
+    pub-rt → Subnet associations → Edit subnet associations
+    ✅ pub-subnet-1a  ✅ pub-subnet-1b → Save
+
+B) Private (App) Route Table:
+  Create route table: Name: priv-app-rt  |  VPC: prod-vpc → Create
+  Add route: 0.0.0.0/0 → NAT Gateway → prod-nat-gw → Save
+  Associate: app-subnet-1a, app-subnet-1b
+
+C) DB Route Table (NO internet route):
+  Create route table: Name: priv-db-rt  |  VPC: prod-vpc → Create
+  ← DO NOT add any 0.0.0.0/0 route (DB must have no internet access)
+  Associate: db-subnet-1a, db-subnet-1b
+```
+
+### Create VPC + Subnets + IGW + NAT — CLI (Bash Script)
 
 ```bash
 # VPC
@@ -640,6 +1105,8 @@ aws ec2 create-route --route-table-id $PUB_RT \
 aws ec2 associate-route-table --route-table-id $PUB_RT --subnet-id $PUB_1A
 ```
 
+---
+
 ### Security Groups vs NACLs
 
 | Feature | Security Group | NACL |
@@ -650,8 +1117,41 @@ aws ec2 associate-route-table --route-table-id $PUB_RT --subnet-id $PUB_1A
 | Evaluation | All rules | Numbered order (lowest first) |
 | Default | Deny all in | Allow all |
 
-### Security Group — Layered Architecture
+---
 
+### Security Group — Layered Architecture — Console + CLI
+
+**Console:**
+```
+━━━ Bastion SG — only your IP can SSH ━━━
+EC2 → Security Groups → Create security group
+  Name: bastion-sg  |  VPC: prod-vpc
+  Inbound rules → Add rule:
+    Type: SSH  |  Port: 22  |  Source: My IP  (auto-fills your IP)
+→ Create security group
+
+━━━ ALB SG — public web traffic ━━━
+Create security group: alb-sg  |  VPC: prod-vpc
+Inbound rules:
+  HTTP    | 80  | Source: 0.0.0.0/0
+  HTTPS   | 443 | Source: 0.0.0.0/0
+→ Create
+
+━━━ App SG — only ALB on 8080, only bastion on 22 ━━━
+Create security group: app-sg  |  VPC: prod-vpc
+Inbound rules:
+  Custom TCP | 8080 | Source: alb-sg (select Security Group as source type)
+  SSH        | 22   | Source: bastion-sg
+→ Create
+
+━━━ DB SG — only app on 3306 ━━━
+Create security group: db-sg  |  VPC: prod-vpc
+Inbound rules:
+  MYSQL/Aurora | 3306 | Source: app-sg
+→ Create
+```
+
+**CLI:**
 ```bash
 # Bastion SG — only you can SSH
 BASTION_SG=$(aws ec2 create-security-group \
@@ -677,27 +1177,62 @@ aws ec2 authorize-security-group-ingress \
   --group-id $DB_SG --protocol tcp --port 3306 --source-group $APP_SG
 ```
 
-### NACLs — Stateless (L3 Must-Know)
+---
+
+### NACLs — Stateless (L3 Must-Know) — Console
 
 ```
-Public NACL — Inbound Rules:
-  100: TCP 80   0.0.0.0/0 ALLOW   ← HTTP
-  110: TCP 443  0.0.0.0/0 ALLOW   ← HTTPS
-  120: TCP 22   YOUR-IP/32 ALLOW  ← SSH
-  130: TCP 1024-65535 0.0.0.0/0 ALLOW  ← Ephemeral return ports (CRITICAL)
-  *:  All DENY
+VPC → Network ACLs → Create network ACL
+  Name: public-nacl  |  VPC: prod-vpc → Create
 
-Public NACL — Outbound Rules:
-  100: TCP 80   0.0.0.0/0 ALLOW
-  110: TCP 443  0.0.0.0/0 ALLOW
-  120: TCP 1024-65535 0.0.0.0/0 ALLOW  ← Response ports
-  *:  All DENY
+Inbound rules → Edit inbound rules:
+  Rule 100: TCP | 80       | 0.0.0.0/0 | Allow    ← HTTP
+  Rule 110: TCP | 443      | 0.0.0.0/0 | Allow    ← HTTPS
+  Rule 120: TCP | 22       | YOUR-IP/32 | Allow   ← SSH
+  Rule 130: TCP | 1024-65535 | 0.0.0.0/0 | Allow ← Ephemeral return ports (CRITICAL)
+  Rule *:   All traffic    | 0.0.0.0/0 | Deny
+
+Outbound rules → Edit outbound rules:
+  Rule 100: TCP | 80       | 0.0.0.0/0 | Allow
+  Rule 110: TCP | 443      | 0.0.0.0/0 | Allow
+  Rule 120: TCP | 1024-65535 | 0.0.0.0/0 | Allow  ← Response ports
+  Rule *:   All traffic    | 0.0.0.0/0 | Deny
+
+Associate with public subnets:
+  NACL → Subnet associations → Edit → select pub-subnet-1a, pub-subnet-1b → Save
 ```
 
 > **Common mistake:** Forgetting ephemeral ports (1024–65535) in NACLs causes mysterious timeouts. Security Groups are stateful — NACLs are not.
 
-### VPC Flow Logs
+---
 
+### VPC Flow Logs — Console + CLI
+
+**Console:**
+```
+Send to CloudWatch Logs:
+  VPC → Your VPCs → select prod-vpc → Flow logs tab → Create flow log
+    Filter: All (accepted + rejected)
+    Maximum aggregation interval: 1 minute
+    Destination: Send to CloudWatch Logs
+    Destination log group: /aws/vpc/flowlogs/prod-vpc
+    IAM role: Create new role (auto-prompt) or select existing
+  → Create flow log
+
+Send to S3 (cheaper for long-term):
+  Same steps → Destination: Send to an Amazon S3 bucket
+  → S3 bucket ARN: arn:aws:s3:::my-flow-logs-bucket
+
+Analyze in CloudWatch Logs Insights:
+  CloudWatch → Logs Insights → select /aws/vpc/flowlogs/prod-vpc
+  Sample query (SSH brute-force):
+    fields @timestamp, srcaddr, action
+    | filter dstport = 22 and action = "REJECT"
+    | stats count(*) by srcaddr
+    | sort desc | limit 20
+```
+
+**CLI:**
 ```bash
 # Send to S3 and CloudWatch
 aws ec2 create-flow-logs \
@@ -706,15 +1241,11 @@ aws ec2 create-flow-logs \
   --log-destination-type s3 \
   --log-destination arn:aws:s3:::my-flow-logs-bucket \
   --max-aggregation-interval 60
-
-# Analyze with CloudWatch Insights
-# Filter: find SSH brute-force attempts
-# fields @timestamp, srcaddr, action
-# | filter dstport = 22 and action = "REJECT"
-# | stats count(*) by srcaddr | sort desc | limit 20
 ```
 
-### VPC Peering vs Transit Gateway
+---
+
+### VPC Peering vs Transit Gateway (Architecture Decision)
 
 ```
 Peering (non-transitive):          Transit Gateway (transitive hub-spoke):
@@ -727,8 +1258,82 @@ Use Peering: < 5 VPCs, simple topology
 Use TGW: 5+ VPCs, multi-account, need on-prem connectivity
 ```
 
-### VPC Endpoints (Save NAT Gateway Costs)
+---
 
+### VPC Peering — Console
+
+```
+Step 1 — Create Peering Connection
+  VPC → Peering connections → Create peering connection
+    Name: prod-dev-peer
+    VPC Requester: prod-vpc (10.0.0.0/16)
+    Account: My account (or another account ID)
+    VPC Accepter: dev-vpc (10.1.0.0/16)
+  → Create peering connection
+
+Step 2 — Accept the Request
+  Peering connections → select the pending connection
+  → Actions → Accept request → Accept
+
+Step 3 — Update Route Tables (both VPCs)
+  prod-vpc route table → Routes → Edit routes → Add route:
+    Destination: 10.1.0.0/16 → Target: Peering Connection → prod-dev-peer
+
+  dev-vpc route table → Routes → Edit routes → Add route:
+    Destination: 10.0.0.0/16 → Target: Peering Connection → prod-dev-peer
+```
+
+---
+
+### Transit Gateway — Console
+
+```
+Step 1 — Create TGW
+  VPC → Transit gateways → Create transit gateway
+    Name: corp-tgw
+    ASN: 64512 (default)
+    ✅ DNS support, ✅ VPN ECMP support
+  → Create transit gateway (takes ~5 min)
+
+Step 2 — Attach VPCs
+  VPC → Transit gateway attachments → Create transit gateway attachment
+    TGW: corp-tgw
+    Attachment type: VPC
+    VPC: prod-vpc → select subnets (one per AZ)
+  → Create  (repeat for dev-vpc, staging-vpc)
+
+Step 3 — Update Route Tables in each VPC
+  Each VPC's private route table → Add route:
+    Destination: 10.0.0.0/8 (covers all internal CIDRs)
+    Target: Transit Gateway → corp-tgw
+```
+
+---
+
+### VPC Endpoints — Console + CLI (Save NAT Gateway Costs)
+
+**Console:**
+```
+Gateway Endpoint for S3 (FREE):
+  VPC → Endpoints → Create endpoint
+    Service category: AWS services
+    Service: com.amazonaws.ap-south-1.s3 → Gateway type
+    VPC: prod-vpc
+    Route tables: select all private route tables
+  → Create endpoint
+
+Interface Endpoint for SSM (removes need for NAT or bastion):
+  VPC → Endpoints → Create endpoint
+    Service: com.amazonaws.ap-south-1.ssm → Interface type
+    VPC: prod-vpc
+    Subnets: select private app subnets
+    Security group: allow port 443 from VPC CIDR
+    ✅ Enable private DNS name
+  → Create endpoint
+  Repeat for: ssmmessages and ec2messages
+```
+
+**CLI:**
 ```bash
 # Gateway Endpoint for S3 — FREE, traffic never leaves AWS
 aws ec2 create-vpc-endpoint \
@@ -748,8 +1353,31 @@ aws ec2 create-vpc-endpoint \
 # Repeat for ssmmessages and ec2messages
 ```
 
-### Route 53 Private Hosted Zone (Internal DNS)
+---
 
+### Route 53 Private Hosted Zone (Internal DNS) — Console + CLI
+
+**Console:**
+```
+Route 53 → Hosted zones → Create hosted zone
+  Domain name: internal.yourcompany.com
+  Type: ✅ Private hosted zone
+  Region: ap-south-1
+  VPC ID: select your prod-vpc
+→ Create hosted zone
+
+Add internal records:
+  Hosted zone → Create record
+    Record name: db    |  Type: A  |  Value: 10.0.5.10
+    Record name: cache |  Type: A  |  Value: 10.0.3.20
+    Record name: api   |  Type: A  |  Value: 10.0.3.30
+→ Create records
+
+Now use db.internal.yourcompany.com instead of hardcoded IPs.
+When DB moves — update DNS, zero app changes.
+```
+
+**CLI:**
 ```bash
 # Create private hosted zone
 aws route53 create-hosted-zone \
@@ -761,6 +1389,8 @@ aws route53 create-hosted-zone \
 # Now use db.internal.yourcompany.com instead of 10.0.5.10
 # When DB moves — update DNS, zero app changes
 ```
+
+---
 
 ### Connectivity Validation Tests
 
@@ -775,7 +1405,26 @@ aws route53 create-hosted-zone \
 ```bash
 # From private instance — verify NAT GW is used
 curl https://ifconfig.me  # Shows NAT GW's Elastic IP, not instance IP
+```
 
+---
+
+### Reachability Analyzer — Console + CLI
+
+**Console:**
+```
+VPC → Network Manager → Reachability Analyzer → Create and analyze path
+  Source type: Instance | Source: bastion-instance
+  Destination type: Instance | Destination: private-app-instance
+  Protocol: TCP | Destination port: 22
+→ Create and analyze path  (takes ~1 min)
+
+→ If "Not reachable" — click the path → expand the blocking component
+  It will show exactly which SG rule or route table entry blocks the traffic
+```
+
+**CLI:**
+```bash
 # Reachability Analyzer (no traffic sent — free analysis)
 PATH_ID=$(aws ec2 create-network-insights-path \
   --source <bastion-instance-id> \
@@ -785,22 +1434,25 @@ PATH_ID=$(aws ec2 create-network-insights-path \
 aws ec2 start-network-insights-analysis --network-insights-path-id $PATH_ID
 ```
 
+---
+
 ### VPC Cleanup Order (Avoid Billing Traps)
 
-```bash
-# Always in this order — dependencies break on reverse
-1. Terminate EC2 instances
-2. Delete NAT Gateway → wait → Release Elastic IP
-3. Delete Network Firewall (if used)
-4. Delete Transit Gateway Attachments → Transit Gateway
-5. Delete VPN Connection → Detach VGW → Delete VGW
-6. Delete VPC Endpoints
-7. Delete VPC Peering Connections
-8. Detach + Delete Internet Gateway
-9. Delete Route Tables (custom)
-10. Delete Security Groups
-11. Delete Subnets
-12. Delete VPC
+```
+Always in this order — dependencies prevent reverse order:
+1.  EC2 → Instances → Terminate all instances
+2.  VPC → NAT Gateways → Delete NAT GW → wait Available → Deleted
+3.  EC2 → Elastic IPs → Release address
+4.  Delete Network Firewall (if used)
+5.  VPC → Transit Gateway Attachments → Delete → then Transit Gateway → Delete
+6.  VPC → VPN Connections → Delete → detach VGW → delete VGW
+7.  VPC → Endpoints → Delete
+8.  VPC → Peering Connections → Delete
+9.  VPC → Internet Gateways → Detach from VPC → Delete
+10. VPC → Route Tables → Delete (custom only; main RT auto-deletes with VPC)
+11. VPC → Security Groups → Delete (custom only)
+12. VPC → Subnets → Delete all subnets
+13. VPC → Your VPCs → Delete VPC
 ```
 
 ---
@@ -819,6 +1471,8 @@ aws ec2 start-network-insights-analysis --network-insights-path-id $PATH_ID
 | **TXT** | Verification, SPF, DKIM | `"v=spf1 include:..."` |
 | **NS** | Name servers for zone | Route 53 NS servers |
 
+---
+
 ### CNAME vs Alias — Critical Difference
 
 | Feature | CNAME | Alias |
@@ -828,7 +1482,9 @@ aws ec2 start-network-insights-analysis --network-insights-path-id $PATH_ID
 | DNS query charge? | ✅ Charged | ❌ Free for AWS resources |
 | TTL | You set it | Route 53 manages it |
 
-> **Rule:** Anything pointing to an AWS resource → use Alias. Root domain (`co`) must use Alias.
+> **Rule:** Anything pointing to an AWS resource → use Alias. Root domain must use Alias.
+
+---
 
 ### All Routing Policies
 
@@ -843,13 +1499,41 @@ aws ec2 start-network-insights-analysis --network-insights-path-id $PATH_ID
 | **IP-Based** | CIDR-level routing | ✅ Optional | Most granular |
 | **Multi-Value** | Client-side LB with HA | ✅ Recommended | Up to 8 healthy records |
 
-### Hands-On: Latency-Based Routing (3 Regions)
+---
 
+### Latency-Based Routing (3 Regions) — Console + CLI
+
+**Console:**
+```
+Route 53 → Hosted zones → select your zone → Create record
+
+Record 1 — Mumbai:
+  Record name: app.yourco.com
+  Record type: A
+  Value: <mumbai-EC2-public-IP>
+  TTL: 60
+  Routing policy: Latency
+  Region: ap-south-1
+  Record ID: latency-mumbai
+→ Create records
+
+Repeat for Record 2 — Ireland:
+  Same record name: app.yourco.com
+  Routing policy: Latency | Region: eu-west-1
+  Value: <ireland-EC2-public-IP>
+  Record ID: latency-ireland
+
+Repeat for Record 3 — Virginia:
+  Routing policy: Latency | Region: us-east-1
+  Value: <virginia-EC2-public-IP>
+  Record ID: latency-virginia
+
+Route 53 will automatically return the IP with lowest latency to each client.
+```
+
+**CLI:**
 ```bash
 # Create 3 records — same hostname, different regions
-# Console: Route 53 → Hosted Zone → Create Record → Latency policy
-
-# CLI example (ap-south-1 record)
 aws route53 change-resource-record-sets \
   --hosted-zone-id Z1234ABCDEF \
   --change-batch '{
@@ -868,8 +1552,33 @@ aws route53 change-resource-record-sets \
 # Repeat with different Region and IP for eu-west-1, us-east-1
 ```
 
-### Health Checks
+---
 
+### Health Checks — Console + CLI
+
+**Console:**
+```
+Route 53 → Health checks → Create health check
+  Name: mumbai-app-health
+  What to monitor: Endpoint
+  Protocol: HTTP
+  IP address: 13.234.56.78
+  Port: 80
+  Path: /health
+  Request interval: 30 seconds
+  Failure threshold: 3
+→ Create health check
+
+Monitor status:
+  Health checks → select check → Monitoring tab
+  → Status shows: Healthy / Unhealthy with CloudWatch metrics
+
+Get notified on failure:
+  Health check → Create alarm
+  → SNS topic: send email alert when status = unhealthy
+```
+
+**CLI:**
 ```bash
 # Create HTTP health check
 aws route53 create-health-check \
@@ -888,29 +1597,79 @@ aws route53 create-health-check \
 aws route53 get-health-check-status --health-check-id <id>
 ```
 
-### Failover Routing (Active-Passive)
+---
+
+### Failover Routing (Active-Passive) — Console
 
 ```
-Primary record:  app.co → Mumbai EC2 (health check REQUIRED)
-Secondary record: app.co → S3 Static "Maintenance" page (no health check needed)
+Step 1 — Create Health Check for primary (see above)
 
-When health check fails → Route 53 automatically serves secondary
-When primary recovers → traffic returns to primary
+Step 2 — Create Primary Record
+  Route 53 → Hosted zones → Create record
+    Record name: app.yourco.com  |  Type: A
+    Value: <mumbai-EC2-IP>
+    Routing policy: Failover
+    Failover record type: Primary
+    Health check: mumbai-app-health  ← REQUIRED on primary
+    Record ID: failover-primary
+  → Create records
+
+Step 3 — Create Secondary Record
+  Create record (same name and type)
+    Value: <S3-static-website-endpoint> (or S3 alias)
+    Routing policy: Failover
+    Failover record type: Secondary
+    Record ID: failover-secondary
+    (No health check needed on secondary)
+  → Create records
+
+Result: When health check fails → Route 53 automatically serves secondary.
+        When primary recovers → traffic returns to primary.
 ```
+
+---
 
 ### TTL Strategy for Production Changes
 
 ```
-Normal operation:   TTL = 3600   ← balance of cost and flexibility
+Normal operation:    TTL = 3600   ← balance of cost and flexibility
 48h before IP change: TTL = 60  ← reduce early so caches drain
-After IP change:    TTL = 3600  ← restore once propagated
+After IP change:     TTL = 3600  ← restore once propagated
 ```
 
-### Hybrid DNS — Route 53 Resolver
+---
 
+### Hybrid DNS — Route 53 Resolver — Console + CLI
+
+**Console:**
+```
+VPC → DNS Firewall / Route 53 Resolver → Inbound endpoints → Create inbound endpoint
+  Name: corp-inbound-endpoint
+  VPC: prod-vpc
+  Security group: allow UDP/TCP 53 from on-prem IP range
+  IP addresses: select 2 subnets (one per AZ) → auto-assign IPs
+→ Create (gives 2 IPs — configure on-prem DNS forwarder to send AWS queries here)
+
+Create Outbound Endpoint:
+  Resolver → Outbound endpoints → Create outbound endpoint
+    Name: corp-outbound-endpoint
+    VPC: prod-vpc
+    Security group: allow outbound UDP/TCP 53
+    IP addresses: select 2 subnets → auto-assign IPs
+  → Create
+
+Create Forwarding Rule (AWS → on-prem DNS):
+  Resolver → Rules → Create rule
+    Name: forward-to-onprem
+    Rule type: Forward
+    Domain name: internal.corp
+    Target IP addresses: 192.168.1.53 port 53  ← on-prem DNS server
+    VPCs to associate: prod-vpc
+  → Save
+```
+
+**CLI:**
 ```bash
-# For on-prem ↔ AWS private DNS resolution
-
 # Inbound endpoint: on-prem can query AWS private DNS
 aws route53resolver create-resolver-endpoint \
   --creator-request-id $(date +%s) \
@@ -934,7 +1693,9 @@ aws route53resolver create-resolver-rule \
   --target-ips Ip=192.168.1.53,Port=53
 ```
 
-### DNS Troubleshooting Commands
+---
+
+### DNS Troubleshooting Commands (Terminal)
 
 ```bash
 # Basic lookup
@@ -971,8 +1732,29 @@ watch -n 1 "dig +short app.yourco.com"
 | **Task / Pod** | Unit running one or more containers |
 | **Fargate** | Serverless compute — no EC2 to manage |
 
-### ECR — Image Registry
+---
 
+### ECR — Image Registry — Console + CLI
+
+**Console:**
+```
+Create Repository:
+  ECR → Repositories → Create repository
+    Visibility: Private
+    Repository name: my-app
+    Tag immutability: Enabled  ← Production safety
+    Scan on push: Enabled  ← auto-vulnerability scan
+  → Create repository
+
+Note the URI: <account-id>.dkr.ecr.ap-south-1.amazonaws.com/my-app
+
+View Scan Results:
+  ECR → Repositories → my-app → Images
+  → select image → click Vulnerabilities
+  → Review CRITICAL / HIGH findings
+```
+
+**CLI (Authenticate & Push — required for image management):**
 ```bash
 # Authenticate Docker to ECR (valid 12 hours)
 aws ecr get-login-password --region ap-south-1 \
@@ -993,10 +1775,29 @@ docker push \
 
 # Verify
 aws ecr list-images --repository-name my-app
+
+# Trigger image scan manually
+aws ecr start-image-scan --repository-name my-app --image-id imageTag=v1.0
+aws ecr describe-image-scan-findings --repository-name my-app --image-id imageTag=v1.0
 ```
 
-### ECR Lifecycle Policy (Prevent Storage Bloat)
+---
 
+### ECR Lifecycle Policy — Console + CLI
+
+**Console:**
+```
+Set Lifecycle Policy:
+  ECR → Repositories → my-app → Lifecycle policy → Create rule
+    Rule priority: 1
+    Rule description: Remove untagged images after 7 days
+    Image status: Untagged
+    Match criteria: Since image pushed — 7 days
+    Action: Expire
+  → Save (add second rule: keep only 10 tagged v* images)
+```
+
+**CLI:**
 ```bash
 cat > lifecycle.json << 'EOF'
 {
@@ -1032,6 +1833,8 @@ aws ecr put-lifecycle-policy \
   --lifecycle-policy-text file://lifecycle.json
 ```
 
+---
+
 ### Docker Multi-Stage Build (Smaller, Safer Images)
 
 ```dockerfile
@@ -1061,7 +1864,9 @@ docker buildx build \
   --push .
 ```
 
-### ECS — Fargate (Serverless Containers)
+---
+
+### ECS — Fargate Architecture & IAM Roles
 
 ```
 ECS Architecture:
@@ -1074,6 +1879,104 @@ Two IAM Roles:
   Task Execution Role → ECS agent uses this to pull image + send logs (ecsTaskExecutionRole)
   Task Role          → Your app code uses this to call AWS APIs (S3, DynamoDB etc.)
 ```
+
+---
+
+### ECS Fargate Full Deployment — Console (Step-by-Step)
+
+```
+━━━ Step 1: Create ECS Cluster ━━━
+ECS → Clusters → Create cluster
+  Cluster name: my-cluster
+  Infrastructure: AWS Fargate  ← serverless
+→ Create cluster
+
+━━━ Step 2: Create CloudWatch Log Group ━━━
+CloudWatch → Log groups → Create log group
+  Log group name: /ecs/my-app
+  Retention: 30 days
+→ Create
+
+━━━ Step 3: Create Task Definition ━━━
+ECS → Task definitions → Create new task definition
+  Task definition family: my-app-task
+  Launch type: AWS Fargate
+  OS/Architecture: Linux/X86_64
+  CPU: 0.5 vCPU  |  Memory: 1 GB
+  Task role: (your app-level AWS role, if app calls AWS APIs)
+  Task execution role: ecsTaskExecutionRole  ← allows ECR pull + CloudWatch
+
+Container — Add container:
+  Name: my-app
+  Image URI: <account-id>.dkr.ecr.ap-south-1.amazonaws.com/my-app:v1.0
+  Port mappings: Container port 80 → TCP
+  Log collection: ✅ Use log collection
+    Log driver: awslogs
+    awslogs-group: /ecs/my-app
+    awslogs-region: ap-south-1
+    awslogs-stream-prefix: ecs
+→ Create (creates revision 1)
+
+━━━ Step 4: Store Secrets (optional) ━━━
+Secrets Manager → Store a new secret
+  Secret type: Other type of secret
+  Key: DB_PASSWORD | Value: mypassword123
+  Secret name: /myapp/prod/db-password
+→ Store (note the Secret ARN)
+
+Reference in task definition:
+  Container → Environment variables → Add:
+    Key: DB_PASSWORD
+    Value type: ValueFrom
+    Value: <secret-arn>
+  (Task execution role must have secretsmanager:GetSecretValue permission)
+
+━━━ Step 5: Create Target Group ━━━
+EC2 → Load Balancers → Target groups → Create target group
+  Target type: IP addresses  ← required for Fargate
+  Target group name: my-app-tg
+  Protocol: HTTP | Port: 80
+  VPC: prod-vpc
+  Health check path: /health
+→ Create target group
+
+━━━ Step 6: Create Application Load Balancer ━━━
+EC2 → Load Balancers → Create load balancer → Application Load Balancer
+  Name: my-app-alb
+  Scheme: Internet-facing
+  IP type: IPv4
+  VPC: prod-vpc
+  Subnets: ✅ pub-subnet-1a  ✅ pub-subnet-1b
+  Security group: alb-sg (ports 80 + 443)
+  Listener: HTTP:80 → Forward to my-app-tg
+→ Create load balancer
+
+━━━ Step 7: Create ECS Service ━━━
+ECS → Clusters → my-cluster → Services → Create
+  Launch type: FARGATE
+  Task definition: my-app-task (latest revision)
+  Service name: my-app-service
+  Desired tasks: 2
+  Deployment type: Rolling update
+  ✅ Enable deployment circuit breaker  |  ✅ Enable rollback
+  VPC: prod-vpc
+  Subnets: app-subnet-1a, app-subnet-1b
+  Security group: app-sg
+  ✅ Load balancing: Application Load Balancer
+    Load balancer: my-app-alb
+    Listener: 80:HTTP
+    Target group: my-app-tg
+→ Create service
+
+Verify deployment:
+  ECS → Clusters → my-cluster → Services → my-app-service → Deployments tab
+  → Wait for Running count = 2
+  → Open ALB DNS in browser to verify the app
+```
+
+---
+
+### ECS Fargate Deployment — CLI
 
 ```bash
 # Create cluster
@@ -1105,12 +2008,8 @@ cat > task-def.json << 'EOF'
 EOF
 
 aws ecs register-task-definition --cli-input-json file://task-def.json
-```
 
-### ECS Service + ALB (Production Pattern)
-
-```bash
-# Create target group and ALB first, then:
+# Create service (create ALB + target group first)
 aws ecs create-service \
   --cluster my-cluster \
   --service-name my-app-service \
@@ -1125,8 +2024,60 @@ aws ecs create-service \
   --deployment-configuration "deploymentCircuitBreaker={enable=true,rollback=true}"
 ```
 
-### ECS Operations
+---
 
+### Secrets Management in ECS — Console + CLI
+
+**Console:**
+```
+Secrets Manager → Store a new secret
+  Secret type: Other type of secret
+  Key: DB_PASSWORD | Value: mypassword123
+  Secret name: /myapp/prod/db-password
+→ Store (note the Secret ARN)
+
+Reference in task definition:
+  Container → Environment variables → Add:
+    Key: DB_PASSWORD  |  Value type: ValueFrom  |  Value: <secret-arn>
+```
+
+**CLI:**
+```bash
+# Store secret
+aws secretsmanager create-secret \
+  --name /myapp/prod/db-password \
+  --secret-string "mypassword123"
+SECRET_ARN=$(aws secretsmanager describe-secret \
+  --secret-id /myapp/prod/db-password --query ARN --output text)
+
+# Reference in task definition containerDefinitions:
+# "secrets": [{"name": "DB_PASSWORD", "valueFrom": "<secret-arn>"}]
+```
+
+---
+
+### ECS Operations — Console + CLI
+
+**Console:**
+```
+Force Redeploy (new image, same tag):
+  ECS → Clusters → my-cluster → Services → my-app-service → Update service
+  ✅ Force new deployment → Update
+
+View Live Logs:
+  ECS → Clusters → my-cluster → Services → my-app-service → Logs tab
+  (also available in CloudWatch → Log groups → /ecs/my-app)
+
+View Task Details:
+  ECS → Clusters → my-cluster → Tasks → select running task
+  → Containers tab → view port, IPs, environment, health status
+
+Shell into Running Container (ECS Exec — enable first):
+  ECS → Services → my-app-service → Update service
+  ✅ Enable Execute Command → Update service → Force new deployment → Update
+```
+
+**CLI:**
 ```bash
 # Force redeploy (new image, same tag)
 aws ecs update-service \
@@ -1147,22 +2098,30 @@ aws ecs execute-command \
   --container my-app --interactive --command "/bin/sh"
 ```
 
-### Secrets Management in ECS
+---
 
-```bash
-# Store secret
-aws secretsmanager create-secret \
-  --name /myapp/prod/db-password \
-  --secret-string "mypassword123"
-SECRET_ARN=$(aws secretsmanager describe-secret \
-  --secret-id /myapp/prod/db-password --query ARN --output text)
+### ECS Auto Scaling — Console + CLI
 
-# Reference in task definition containerDefinitions:
-# "secrets": [{"name": "DB_PASSWORD", "valueFrom": "<secret-arn>"}]
+**Console:**
+```
+ECS → Clusters → my-cluster → Services → my-app-service → Update service
+
+Service auto scaling → Use Service Auto Scaling
+  Minimum tasks: 1
+  Desired tasks: 2
+  Maximum tasks: 10
+
+Scaling policies → Add scaling policy:
+  Policy type: Target tracking
+  Policy name: cpu-tracking
+  ECS service metric: ECSServiceAverageCPUUtilization
+  Target value: 50%
+  Scale-out cooldown: 60 seconds
+  Scale-in cooldown: 60 seconds
+→ Update service
 ```
 
-### ECS Auto Scaling
-
+**CLI:**
 ```bash
 aws application-autoscaling register-scalable-target \
   --service-namespace ecs \
@@ -1186,6 +2145,8 @@ aws application-autoscaling put-scaling-policy \
   }'
 ```
 
+---
+
 ### ECS Deployment Strategies
 
 | Strategy | How it works | Use case |
@@ -1194,7 +2155,11 @@ aws application-autoscaling put-scaling-policy \
 | **Blue/Green (CodeDeploy)** | Runs new alongside old; shifts traffic when healthy | Zero-downtime |
 | **Circuit breaker** | Auto-rollback if new tasks fail to start | Safety net (always enable) |
 
-### EKS — Kubernetes on AWS
+---
+
+### EKS — Kubernetes on AWS — Terminal + Console Monitoring
+
+> **Note:** EKS cluster creation, kubectl, and eksctl are terminal operations. The EKS console is used to monitor nodes, pods, workloads, and view add-on status.
 
 ```bash
 # Create cluster (takes 15–20 min)
@@ -1215,6 +2180,20 @@ kubectl get nodes
 kubectl get pods --all-namespaces
 ```
 
+**Console — Monitor EKS:**
+```
+EKS → Clusters → my-eks-cluster
+  → Overview: cluster status, Kubernetes version
+  → Compute tab: node groups, node status
+  → Workloads tab: Deployments, DaemonSets, Pods
+  → Configuration → Add-ons: view/update vpc-cni, coredns, kube-proxy
+
+Console — View Pod logs:
+  EKS → Clusters → my-eks-cluster → Workloads → Pods → select pod → Logs
+```
+
+---
+
 ### Kubernetes Core Objects
 
 | Object | Purpose | L3 Note |
@@ -1228,7 +2207,9 @@ kubectl get pods --all-namespaces
 | **HPA** | Scale pods on CPU/memory | Requires Metrics Server |
 | **PDB** | Protect pods during disruptions | Always set before node drains |
 
-### Deploy App to EKS
+---
+
+### Deploy App to EKS (Terminal)
 
 ```bash
 cat > deployment.yaml << 'EOF'
@@ -1271,6 +2252,8 @@ kubectl rollout status deployment/my-app
 kubectl rollout undo deployment/my-app
 ```
 
+---
+
 ### IRSA — IAM Roles for Service Accounts (Pods → AWS)
 
 ```bash
@@ -1288,8 +2271,31 @@ eksctl create iamserviceaccount \
 # Pod now has S3 read access via IRSA — zero hardcoded credentials
 ```
 
-### EKS Cluster Upgrade (L3 Procedure)
+---
 
+### EKS Cluster Upgrade — Console + CLI
+
+**Console:**
+```
+Console — Check current version:
+  EKS → Clusters → my-eks-cluster → Overview → Kubernetes version
+
+Console — Upgrade control plane:
+  EKS → Clusters → my-eks-cluster → Update Kubernetes version
+  → Select: 1.30 (upgrade ONE minor version at a time: 1.28 → 1.29 → 1.30)
+  → Update  (takes 10–20 min)
+
+Console — Upgrade node group:
+  EKS → Clusters → my-eks-cluster → Compute → Node groups → workers
+  → Update now → Rolling update → Confirm
+
+Console — Update Add-ons:
+  EKS → Clusters → my-eks-cluster → Configuration → Add-ons
+  → For each add-on (vpc-cni, coredns, kube-proxy, aws-ebs-csi-driver):
+    Select → Update → Resolve conflicts: Overwrite → Update
+```
+
+**CLI:**
 ```bash
 # ALWAYS upgrade one minor version at a time: 1.28 → 1.29 → 1.30
 
@@ -1309,6 +2315,8 @@ aws eks update-addon \
 # Repeat for coredns, kube-proxy, aws-ebs-csi-driver
 ```
 
+---
+
 ### ECS vs EKS — Decision Guide
 
 | Factor | ECS | EKS |
@@ -1321,6 +2329,8 @@ aws eks update-addon \
 | Service mesh | ECS Service Connect | Istio / Linkerd |
 
 > **Rule of thumb:** Start with ECS Fargate. Migrate to EKS when you need Kubernetes-native features, have k8s-experienced teams, or need cross-cloud portability.
+
+---
 
 ### CI/CD Pipeline: GitHub Actions → ECR → ECS
 
@@ -1374,6 +2384,8 @@ jobs:
         wait-for-service-stability: true
 ```
 
+---
+
 ### Container Security Checklist
 
 - [ ] Images built with multi-stage (no build tools in production)
@@ -1393,7 +2405,7 @@ jobs:
 
 ## 7 · Cross-Domain Self-Practice Questions
 
-> Work through these independently after each domain. Answers require console + CLI practice — not just reading.
+> Work through these independently after each domain. Answers require **both console and CLI practice** — not just reading.
 
 ---
 
@@ -1412,7 +2424,7 @@ jobs:
 ### EC2 & Storage Practice Questions
 
 8. Launch an EC2 instance via User Data that installs Docker, pulls `nginx:alpine` from ECR, and starts it on port 80. Access the page in your browser.
-9. You have a 50 GB `gp2` volume. Migrate it to `gp3` with no downtime and no snapshot (hint: live volume modification). Verify the new type and performance settings.
+9. You have a 50 GB `gp2` volume. Migrate it to `gp3` with no downtime and no snapshot (console: Volumes → Modify Volume → change type to gp3). Verify the new type and performance settings.
 10. A private subnet EC2 instance can't reach `yum` repositories. Trace every step from the instance's ENI to the internet. Where exactly is the break?
 11. Set up a Spot Fleet using `priceCapacityOptimized` strategy across 3 instance types. Deploy a stateless web server and test that it survives a simulated interruption.
 12. Using Data Lifecycle Manager, create a policy that takes daily snapshots of all volumes tagged `Backup=true` and retains the last 7. Verify a snapshot was created.
@@ -1436,11 +2448,11 @@ jobs:
 
 ### VPC Practice Questions
 
-23. Build the full 3-tier VPC from scratch (public/app/db subnets in 2 AZs) using only CLI. Validate: bastion SSH works, private app has internet via NAT, DB has NO internet.
+23. Build the full 3-tier VPC from scratch (public/app/db subnets in 2 AZs) using both console and CLI. Validate: bastion SSH works, private app has internet via NAT, DB has NO internet.
 24. Create a VPC Peering connection between `prod-vpc (10.0.0.0/16)` and `dev-vpc (10.1.0.0/16)`. Why would peering fail if you chose `10.0.0.0/16` for both?
 25. Enable VPC Flow Logs and intentionally trigger a Security Group REJECT (try SSH to a closed port). Find that REJECT entry in CloudWatch Insights using a Log Insights query.
 26. A private EC2 instance is hitting `s3.amazonaws.com` via NAT Gateway — you can see the data charges. Add a Gateway Endpoint and verify the traffic no longer uses NAT (check flow logs).
-27. Your app server can't reach the SSM Session Manager. You don't have a NAT Gateway. Create Interface Endpoints for `ssm`, `ssmmessages`, and `ec2messages`. Test with `aws ssm start-session`.
+27. Your app server can't reach the SSM Session Manager. You don't have a NAT Gateway. Create Interface Endpoints for `ssm`, `ssmmessages`, and `ec2messages`. Test with AWS Systems Manager → Session Manager → Start session.
 28. Design a NACL for a public subnet that blocks inbound from a specific IP range (simulate a malicious IP). Confirm Security Group still allows your IP, but the blocked CIDR is rejected at subnet level.
 29. Set up a Transit Gateway with 3 VPCs. Verify any VPC can ping any other. Then create a Route Table in TGW that blocks dev-vpc from reaching db-vpc.
 30. Run Reachability Analyzer to find why an EC2 in `priv-app-subnet-1a` can't reach the RDS in `priv-db-subnet-1a`. Document the exact blocking component it identifies.
@@ -1503,7 +2515,66 @@ These require combining multiple services. Design first (whiteboard or diagram),
 
 ---
 
-## Quick Reference — Critical CLI Commands
+## 8 · Console Navigation Quick Reference
+
+| Task | Console Path |
+|------|-------------|
+| Create IAM User | IAM → Users → Create user |
+| Create IAM Role (for EC2) | IAM → Roles → Create role → EC2 |
+| Policy Simulator | IAM → top menu "Tools" → Policy Simulator |
+| Credentials Report | IAM → Credential report → Download |
+| Access Advisor | IAM → Users → [user] → Access Advisor tab |
+| Launch EC2 | EC2 → Instances → Launch instance |
+| Create EBS Volume | EC2 → Elastic Block Store → Volumes → Create |
+| Create Snapshot | EC2 → Volumes → [vol] → Actions → Create snapshot |
+| Create AMI | EC2 → Instances → [i] → Actions → Image and templates → Create image |
+| Data Lifecycle Manager | EC2 → Elastic Block Store → Lifecycle Manager |
+| Create S3 Bucket | S3 → Create bucket |
+| S3 Bucket Policy | S3 → [bucket] → Permissions → Bucket policy → Edit |
+| S3 Lifecycle Rules | S3 → [bucket] → Management → Lifecycle rules |
+| S3 Versioning | S3 → [bucket] → Properties → Bucket Versioning → Enable |
+| S3 Static Website | S3 → [bucket] → Properties → Static website hosting → Enable |
+| S3 Replication | S3 → [bucket] → Management → Replication rules → Create |
+| S3 Object Lock | S3 → [bucket] → Object → Object actions → Edit object lock retention |
+| S3 Pre-signed URL | S3 → [bucket] → [object] → Object actions → Share with a presigned URL |
+| S3 Storage Lens | S3 → Storage Lens → Create dashboard |
+| Create VPC | VPC → Your VPCs → Create VPC |
+| Create Subnets | VPC → Subnets → Create subnet |
+| Create IGW | VPC → Internet gateways → Create |
+| Create NAT GW | VPC → NAT gateways → Create |
+| Create Route Table | VPC → Route tables → Create |
+| VPC Endpoints | VPC → Endpoints → Create endpoint |
+| VPC Flow Logs | VPC → Your VPCs → [vpc] → Flow logs → Create flow log |
+| Reachability Analyzer | VPC → Network Manager → Reachability Analyzer |
+| VPC Peering | VPC → Peering connections → Create peering connection |
+| Transit Gateway | VPC → Transit gateways → Create transit gateway |
+| Create Security Group | EC2 → Security Groups → Create security group |
+| Create NACL | VPC → Network ACLs → Create network ACL |
+| Route 53 Hosted Zone | Route 53 → Hosted zones → Create hosted zone |
+| Route 53 Record | Route 53 → Hosted zones → [zone] → Create record |
+| Route 53 Health Check | Route 53 → Health checks → Create health check |
+| Route 53 Resolver | VPC → DNS Firewall / Route 53 Resolver |
+| Create ECR Repo | ECR → Repositories → Create repository |
+| ECR Lifecycle Policy | ECR → [repo] → Lifecycle policy → Create rule |
+| ECR Scan Results | ECR → [repo] → Images → [image] → Vulnerabilities |
+| Create ECS Cluster | ECS → Clusters → Create cluster |
+| Create Task Definition | ECS → Task definitions → Create new |
+| Create ECS Service | ECS → Clusters → [cluster] → Services → Create |
+| ECS Force Redeploy | ECS → Services → [service] → Update service → ✅ Force new deployment |
+| ECS Live Logs | ECS → Services → [service] → Logs tab |
+| ECS Exec Enable | ECS → Services → [service] → Update service → ✅ Enable Execute Command |
+| EKS Create Cluster | (eksctl in terminal — no full console wizard) |
+| EKS View Workloads | EKS → Clusters → [cluster] → Workloads |
+| EKS Upgrade Control Plane | EKS → Clusters → [cluster] → Update Kubernetes version |
+| EKS Update Add-ons | EKS → Clusters → [cluster] → Configuration → Add-ons |
+| Secrets Manager | Secrets Manager → Store a new secret |
+| Compute Optimizer | AWS Console → Compute Optimizer |
+| CloudWatch Logs Insights | CloudWatch → Logs Insights |
+| Budget Alerts | Billing → Budgets → Create budget |
+
+---
+
+## 9 · Critical CLI Commands Quick Reference
 
 ```bash
 # ─── IAM ───────────────────────────────────────────────
@@ -1511,30 +2582,48 @@ aws sts get-caller-identity
 aws iam list-users
 aws iam generate-credential-report
 aws iam get-credential-report --query Content --output text | base64 -d
+aws iam list-attached-user-policies --user-name alice
+aws iam create-policy --policy-name MyPolicy --policy-document file://policy.json
+aws iam attach-group-policy --group-name Devs --policy-arn arn:aws:iam::<account>:policy/MyPolicy
 
 # ─── EC2 ───────────────────────────────────────────────
-aws ec2 describe-instances --query 'Reservations[*].Instances[*].[InstanceId,State.Name,PrivateIpAddress]' --output table
+aws ec2 describe-instances \
+  --query 'Reservations[*].Instances[*].[InstanceId,State.Name,PrivateIpAddress]' \
+  --output table
 aws ec2 describe-volumes --filters Name=status,Values=available   # unattached volumes
-aws ec2 describe-addresses --query 'Addresses[?!AssociationId]'   # unattached EIPs
+aws ec2 describe-addresses --query 'Addresses[?AssociationId==null]'   # unattached EIPs
+aws ec2 create-snapshot --volume-id vol-xxxx --description "Before deploy"
+aws ec2 copy-snapshot --source-region ap-south-1 --source-snapshot-id snap-xxxx --region us-east-1
 
 # ─── S3 ────────────────────────────────────────────────
 aws s3 ls
 aws s3 ls s3://bucket/ --recursive --human-readable
 aws s3 presign s3://bucket/file --expires-in 300
+aws s3 presign s3://bucket/file --expires-in 3600 --http-method PUT
 aws s3api list-object-versions --bucket my-bucket
+aws s3api delete-object --bucket my-bucket --key file.txt --version-id <version-id>
+aws s3 cp file.txt s3://my-bucket/ --sse aws:kms --sse-kms-key-id alias/my-key
 
 # ─── VPC ───────────────────────────────────────────────
-aws ec2 describe-vpcs --query 'Vpcs[*].[VpcId,CidrBlock,Tags[?Key==`Name`].Value|[0]]' --output table
+aws ec2 describe-vpcs \
+  --query 'Vpcs[*].[VpcId,CidrBlock,Tags[?Key==`Name`].Value|[0]]' --output table
 aws ec2 describe-subnets --filters Name=vpc-id,Values=$VPC_ID --output table
 aws ec2 describe-security-groups --filters Name=vpc-id,Values=$VPC_ID --output table
+aws ec2 create-flow-logs --resource-type VPC --resource-ids $VPC_ID \
+  --traffic-type ALL --log-destination-type s3 \
+  --log-destination arn:aws:s3:::my-flow-logs-bucket
 
 # ─── Route 53 ──────────────────────────────────────────
 aws route53 list-hosted-zones
 aws route53 list-resource-record-sets --hosted-zone-id Z1234
 aws route53 get-health-check-status --health-check-id <id>
+dig app.yourco.com
+dig +trace app.yourco.com
+dig @8.8.8.8 app.yourco.com
 
 # ─── ECR ───────────────────────────────────────────────
-aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin <account-id>.dkr.ecr.ap-south-1.amazonaws.com
+aws ecr get-login-password --region ap-south-1 \
+  | docker login --username AWS --password-stdin <account-id>.dkr.ecr.ap-south-1.amazonaws.com
 aws ecr describe-repositories
 aws ecr list-images --repository-name my-app
 aws ecr start-image-scan --repository-name my-app --image-id imageTag=latest
@@ -1557,11 +2646,13 @@ kubectl get events --sort-by='.lastTimestamp'
 kubectl exec -it <pod> -- /bin/sh
 aws eks list-clusters
 aws eks update-kubeconfig --name my-cluster --region ap-south-1
+aws eks update-cluster-version --name my-eks-cluster --kubernetes-version 1.30
+aws eks update-addon --cluster-name my-eks-cluster --addon-name vpc-cni --resolve-conflicts OVERWRITE
 ```
 
 ---
 
-## Common Mistakes & Fixes (L3 Survival Guide)
+## 10 · Common Mistakes & Fixes (L3 Survival Guide)
 
 | Mistake | Symptom | Fix |
 |---------|---------|-----|
@@ -1580,22 +2671,26 @@ aws eks update-kubeconfig --name my-cluster --region ap-south-1
 | Secrets in env vars | Plaintext in task definition | Use Secrets Manager `valueFrom` or External Secrets Operator |
 | Single AZ ECS service | AZ failure kills app | Spread tasks across AZs with `spread` placement |
 | Interface Endpoint not working | Still using NAT | Enable private DNS; SG must allow 443 from VPC CIDR |
-| Forgetting add-on update after EKS upgrade | Version mismatch | `aws eks update-addon` for EVERY add-on after control plane upgrade |
+| Forgetting add-on update after EKS upgrade | Version mismatch | Update every add-on via `aws eks update-addon` after control plane upgrade |
+| gp2 still in use | Higher cost, less throughput | Modify volume type to gp3 — no downtime required |
+| Hardcoded IPs in app config | App breaks on infrastructure change | Use Route 53 Private Hosted Zone — update DNS, not app |
+| IMDSv1 enabled on instances | Metadata credential theft | Enforce IMDSv2: `--metadata-options HttpTokens=required` |
+| ECS service with no health check path | Silent failures | Always configure `/health` endpoint and set it in target group |
 
 ---
 
-## 10-Week Learning Path
+## 11 · 10-Week Learning Path
 
 ```
-Week 1  → IAM: Users, Groups, Policies, Roles, MFA, CLI, Access Advisor
-Week 2  → EC2: Instance types, SSH, User Data, Security Groups, IAM Roles
-Week 3  → EC2 Storage: EBS types, mount, snapshot, AMI, EFS, Instance Store
-Week 4  → EC2 Advanced: Purchasing options, Spot, Auto Scaling, Cost Optimizer
-Week 5  → S3: Buckets, policies, versioning, lifecycle, encryption, pre-signed URLs
-Week 6  → VPC Foundation: Subnets, IGW, NAT, Route Tables, SGs, NACLs
+Week 1  → IAM: Users, Groups, Policies, Roles, MFA, CLI Setup & Multi-Profile, Access Advisor
+Week 2  → EC2: Instance types, SSH, User Data, IMDSv2, Security Groups, IAM Roles
+Week 3  → EC2 Storage: EBS types, attach/mount, snapshot, AMI, EFS, Instance Store
+Week 4  → EC2 Advanced: Purchasing options, Spot + Interruption Handler, Auto Scaling, Cost Optimizer
+Week 5  → S3: Buckets, policies, versioning, lifecycle, encryption, pre-signed URLs, Object Lock
+Week 6  → VPC Foundation: Subnets, IGW, NAT, Route Tables, SGs, NACLs (console + CLI)
 Week 7  → VPC Advanced: Peering, TGW, Endpoints, Flow Logs, Reachability Analyzer
-Week 8  → Route 53: All routing policies, Health Checks, Hybrid DNS, TTL strategy
-Week 9  → Containers Part 1: Docker, ECR, ECS Fargate, ALB, secrets, CI/CD
+Week 8  → Route 53: All routing policies, Health Checks, Hybrid DNS, Resolver, TTL strategy
+Week 9  → Containers Part 1: Docker, ECR lifecycle, ECS Fargate full stack, ALB, secrets, CI/CD
 Week 10 → Containers Part 2: EKS, kubectl, IRSA, HPA, Network Policies, upgrades
 ```
 
@@ -1603,4 +2698,5 @@ Week 10 → Containers Part 2: EKS, kubectl, IRSA, HPA, Network Policies, upgrad
 
 *Built for hands-on L3 DevOps engineers. Practice in the console first, automate with CLI second, codify with Terraform third.*  
 *Region: ap-south-1 (Mumbai) | All labs tested on AWS Free Tier + minimal paid resources*  
-*Always clean up resources after practice to avoid unexpected charges.*
+*Always clean up resources after practice to avoid unexpected charges.*  
+*Console README + Master README merged into one complete reference — no topic skipped.*
